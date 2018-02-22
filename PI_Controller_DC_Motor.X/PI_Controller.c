@@ -18,6 +18,7 @@ Program Description:- Using a PI Controller to control a geared DC Motor
 #include "../../Debounce_library/Buttons_Debounce.h"
 #include "../../LCD_library/lcdlib_2016.h"
 #include <plib/timers.h>
+#include <plib/adc.h>
 #define _XTAL_FREQ 8000000
 
 /************************************************
@@ -126,6 +127,7 @@ void main ( void )
 				if (MENU_E){
                     state = UPDATE_DESIRED; //state transition
                     Window(1);             //OnEntry action
+                    ADCON0bits.ADON = 1; //turn on adc
                 }
                 
 				break;
@@ -133,6 +135,7 @@ void main ( void )
 				if (MENU_E){
                     state = RUN;  //state transition
                     Window(0);              //OnEntry action
+                    ADCON0bits.ADON = 0; //turn off adc
                 }
 				break;
 			default: 
@@ -144,21 +147,22 @@ void main ( void )
 		}
 		
 		
-		switch(state)	
+		switch(state)	//state actions
 		{
-			case RUN: 
-				lcd_cursor ( 12, 0 ) ;    //state actions
+			case RUN:             
+				lcd_cursor ( 12, 0 ) ;    
                 lcd_display_value(motor.Desired);
                 lcd_cursor ( 12, 1 ) ;
                 lcd_display_value(motor.Actual);
 				
 				break;
 			case UPDATE_DESIRED: 
-                if (ENTER_E)          //state actions with guard
+                POT_Val = ADRESH >> 2;// read 6 MSb of adc value
+                if (ENTER_E)          
                     motor.Desired = POT_Val;
 				lcd_cursor ( 10, 0 ) ;
-                lcd_display_value(motor.Desired);				
-                
+                lcd_display_value(POT_Val);				
+                SelChanConvADC(ADC_CH0);    //start new conversion
 				break;			
 			default: 
 				lcd_cursor ( 0, 0 ) ;
@@ -195,6 +199,11 @@ void Initial(void){
     OpenTimer0( TIMER_INT_ON & T0_16BIT & T0_SOURCE_INT & T0_PS_1_1);
     WriteTimer0(45536);  //65,536 - 24,576  //overflows every 10mS
     ei();
+    
+    //adc
+    OpenADC(ADC_FOSC_RC & ADC_LEFT_JUST & ADC_4_TAD,
+            ADC_CH0 & ADC_INT_OFF & ADC_REF_VDD_VSS,
+            ADC_1ANA);
     
 }
 
