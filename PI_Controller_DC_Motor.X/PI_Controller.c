@@ -30,7 +30,7 @@ bit TICK_E = 0; //flag for TICK event
 
 const unsigned char * problem = "Problem";
 const unsigned char * startup = "Ready to go";
-										  
+unsigned int captured = 0; //16 bit value to allow data to be read from the CCPR1H:CCPR1L on interrupt										  
 
 /************************************************
 			Function Prototypes
@@ -38,7 +38,8 @@ const unsigned char * startup = "Ready to go";
 void Initial(void);
 void Window(unsigned char num);
 void delay_s(unsigned char secs);
-
+void setup_PWM(void);
+void setup_capture(void);
 
 
 /************************************************
@@ -70,6 +71,15 @@ void __interrupt myIsr(void)
             count_test = 0;                   //Toggle every 1 second (heartbeat))
         }
     }
+     if(PIR1bits.CCP1IF & PIE1bits.CCP1IE)
+    {
+        PIR1bits.CCP1IF = 0;
+        TMR1H  = 0x00;  //reset timer
+        TMR1L  = 0x00;
+        
+        captured = CCPR1L + CCPR1H*256;           
+    }   
+    
 }
 
 
@@ -89,7 +99,9 @@ Bit_Mask Button_Press;
 void main ( void ) 
 {
     unsigned char POT_Val = 0;
-        
+     unsigned int rev_s;
+    unsigned short long tclk = 250000; // F_ins = 2000000, prescale by 8 = 250000
+    
     struct{
         unsigned char Desired;
         unsigned char Actual;
@@ -105,7 +117,8 @@ void main ( void )
     lcd_start ();
     lcd_cursor ( 0, 0 ) ;
     lcd_print ( startup ) ;
-    
+    setup_capture();
+    setup_PWM();
     delay_s(2);
     
     //Initial LCD Display
@@ -149,7 +162,11 @@ void main ( void )
 		
 		switch(state)	//state actions
 		{
-			case RUN:             
+			case RUN: 
+                captured == 0 ? rev_s = 0 : rev_s = tclk/captured; //calc speed
+                captured = 0; //reset captured value
+                motor.Actual = rev_s;
+                
 				lcd_cursor ( 12, 0 ) ;    
                 lcd_display_value(motor.Desired);
                 lcd_cursor ( 12, 1 ) ;
@@ -158,11 +175,13 @@ void main ( void )
 				break;
 			case UPDATE_DESIRED: 
                 POT_Val = ADRESH >> 2;// read 6 MSb of adc value
-                if (ENTER_E)          
+                if (ENTER_E){          
                     motor.Desired = POT_Val;
+                    CCPR2L = motor.Desired;
+                }
 				lcd_cursor ( 10, 0 ) ;
                 lcd_display_value(POT_Val);				
-                SelChanConvADC(ADC_CH0);    //start new conversion
+                SelChanConvADC(ADC_CH0);    //start new conversion (every tick event)
 				break;			
 			default: 
 				lcd_cursor ( 0, 0 ) ;
@@ -229,3 +248,31 @@ void delay_s(unsigned char secs)
     }
 }
 
+void setup_PWM(void)
+{
+    CCP2CON = 0b00001100; //pwm mode
+    PR2 = 100;  // frequency will be 20kHz
+    T2CON = 0b00000100;  //tmr2 is turned on but not prescaled
+    TRISCbits.RC1 = 0; //ccp2 pin output  
+}
+
+
+void setup_capture(void)
+{
+    //PORT C
+    TRISC = 0x04; //pin 2 as input, rest as output
+    
+    //TIMER 1 
+    T1CONbits.RD16 = 1;   //16bit clock
+    T1CONbits.T1CKPS = 0b11; //prescale by 8
+    T1CONbits.TMR1ON = 1;   //turn on tmr 1
+    
+    //CAPTURE
+    CCP1CONbits.CCP1M = 0b0101; //capture on rising edge
+    PIE1bits.CCP1IE = 1; //enable capture interrupt
+    
+    
+    //INTERRUPTS
+    INTCONbits.GIEL     = 1;    //Peripheral Interrupt Enable (PEIE)
+    INTCONbits.GIE      = 1;    //Enable interrupts
+}
