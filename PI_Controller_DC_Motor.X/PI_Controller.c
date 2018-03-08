@@ -20,12 +20,14 @@ Program Description:- Using a PI Controller to control a geared DC Motor
 #include <plib/timers.h>
 #include <plib/adc.h>
 #define _XTAL_FREQ 8000000
+#define MAX_SPEED 100
 
 /************************************************
 			Global Variables
 *************************************************/
 const unsigned char msg_ary[10][16] = {"Dsired Val>", "Actual Val>", 
-                                        "POT","Enter to Accept"};
+                                        "POT"       ,"Enter to Accept",
+                                        "UPDATED!"  ,""};
 bit TICK_E = 0; //flag for TICK event
 
 const unsigned char * problem = "Problem";
@@ -67,7 +69,7 @@ void __interrupt myIsr(void)
         //Heartbeat signal
         count_test++;
         if(count_test == 100){
-            PORTCbits.RC7 = ~PORTCbits.RC7;   //check the timer overflow rate
+            PORTAbits.RA4 = ~PORTAbits.RA4;   //check the timer overflow rate
             count_test = 0;                   //Toggle every 1 second (heartbeat))
         }
     }
@@ -175,9 +177,16 @@ void main ( void )
 				break;
 			case UPDATE_DESIRED: 
                 POT_Val = ADRESH >> 2;// read 6 MSb of adc value
+                if(POT_Val > 55)
+                    POT_Val = 55;
                 if (ENTER_E){          
                     motor.Desired = POT_Val;
-                    CCPR2L = motor.Desired;
+                    CCPR2L = ((motor.Desired+18.294)/(0.7347));
+                    Window(2);
+                    lcd_cursor ( 0, 1 ) ;
+                     lcd_display_value(motor.Desired);
+                    delay_s(1);
+                    Window(1);
                 }
 				lcd_cursor ( 10, 0 ) ;
                 lcd_display_value(POT_Val);				
@@ -202,6 +211,7 @@ void Initial(void){
     
     
     ADCON1 = 0x0F; // digital pins
+    
 	TRISB = 0xFF; //Buttons
 	TRISC = 0x00;   //LEDS
     
@@ -210,9 +220,9 @@ void Initial(void){
     OSCCONbits.IRCF1 = 1;
     OSCCONbits.IRCF0 = 1;
     
-	LATC = 0xff;
-	delay_s(1);
-	LATC = 0x00;
+	//LATC = 0xff;
+	//delay_s(1);
+	//LATC = 0x00;
     
     //0n, 16bit, internal clock(Fosc/4)
     OpenTimer0( TIMER_INT_ON & T0_16BIT & T0_SOURCE_INT & T0_PS_1_1);
@@ -223,7 +233,7 @@ void Initial(void){
     OpenADC(ADC_FOSC_RC & ADC_LEFT_JUST & ADC_4_TAD,
             ADC_CH0 & ADC_INT_OFF & ADC_REF_VDD_VSS,
             ADC_1ANA);
-    
+    TRISAbits.RA4 = 0;
 }
 
 //display line 1 & line 2 msg from array
@@ -250,10 +260,13 @@ void delay_s(unsigned char secs)
 
 void setup_PWM(void)
 {
+    CCPR2L = 50;
     CCP2CON = 0b00001100; //pwm mode
     PR2 = 100;  // frequency will be 20kHz
     T2CON = 0b00000100;  //tmr2 is turned on but not prescaled
     TRISCbits.RC1 = 0; //ccp2 pin output  
+    
+
 }
 
 
