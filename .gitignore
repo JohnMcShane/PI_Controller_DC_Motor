@@ -59,3 +59,4 @@ PI_Controller_DC_Motor.X/dist/default/debug/PI_Controller_DC_Motor.X.debug.obj
 PI_Controller_DC_Motor.X/dist/default/debug/PI_Controller_DC_Motor.X.debug.rlf
 PI_Controller_DC_Motor.X/dist/default/debug/PI_Controller_DC_Motor.X.debug.sdb
 PI_Controller_DC_Motor.X/dist/default/debug/PI_Controller_DC_Motor.X.debug.sym
+~$duty_vs_speed.xlsx

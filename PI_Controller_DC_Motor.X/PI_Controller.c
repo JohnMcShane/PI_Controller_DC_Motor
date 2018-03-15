@@ -34,6 +34,20 @@ const unsigned char * problem = "Problem";
 const unsigned char * startup = "Ready to go";
 unsigned int captured = 0; //16 bit value to allow data to be read from the CCPR1H:CCPR1L on interrupt										  
 
+typedef struct{         //structure for controller
+    float Kp,Ki,Kp_Ki;
+    signed char en;
+    signed char en_1;
+    unsigned char un;
+    unsigned char un_1;    
+}Controller;
+Controller control1;
+ struct{                        //structure for motor
+        unsigned char Desired;
+        unsigned char Actual;
+    } motor;
+    
+    
 /************************************************
 			Function Prototypes
 *************************************************/
@@ -42,7 +56,7 @@ void Window(unsigned char num);
 void delay_s(unsigned char secs);
 void setup_PWM(void);
 void setup_capture(void);
-
+void controller_func(void);
 
 /************************************************
  Interrupt Function 
@@ -72,8 +86,13 @@ void __interrupt myIsr(void)
             PORTAbits.RA4 = ~PORTAbits.RA4;   //check the timer overflow rate
             count_test = 0;                   //Toggle every 1 second (heartbeat))
         }
+        
+        controller_func();
+        CCPR2L = control1.un;
+        
     }
-     if(PIR1bits.CCP1IF & PIE1bits.CCP1IE)
+    
+     if(PIR1bits.CCP1IF & PIE1bits.CCP1IE) //capture interrupt
     {
         PIR1bits.CCP1IF = 0;
         TMR1H  = 0x00;  //reset timer
@@ -101,13 +120,10 @@ Bit_Mask Button_Press;
 void main ( void ) 
 {
     unsigned char POT_Val = 0;
-     unsigned int rev_s;
+    unsigned int rev_s;
     unsigned short long tclk = 250000; // F_ins = 2000000, prescale by 8 = 250000
     
-    struct{
-        unsigned char Desired;
-        unsigned char Actual;
-    } motor;
+   
     
     motor.Desired = 50;
     motor.Actual = 25;
@@ -121,6 +137,19 @@ void main ( void )
     lcd_print ( startup ) ;
     setup_capture();
     setup_PWM();
+    
+    
+    
+    control1.Kp = 0.4;
+    control1.Ki = 0.3;
+    control1.Kp_Ki = control1.Kp +control1. Ki;
+    control1.en = 0;
+    control1.en_1 = 0;
+    control1.un = 50;
+    control1.un_1 = 50;
+    CCPR2L = control1.un;
+    
+    
     delay_s(2);
     
     //Initial LCD Display
@@ -181,7 +210,6 @@ void main ( void )
                     POT_Val = 55;
                 if (ENTER_E){          
                     motor.Desired = POT_Val;
-                    CCPR2L = ((motor.Desired+18.294)/(0.7347));
                     Window(2);
                     lcd_cursor ( 0, 1 ) ;
                      lcd_display_value(motor.Desired);
@@ -235,6 +263,17 @@ void Initial(void){
             ADC_1ANA);
     TRISAbits.RA4 = 0;
 }
+
+// controller function 
+void controller_func(void)
+{
+    control1.en_1 = control1.en;
+    control1.en = motor.Desired - motor.Actual;   //calc new error
+    control1.un = control1.un_1 ;   //save previous output
+    
+    control1.un = (control1.un_1) + (control1.Kp_Ki * control1.en) - (control1.Kp * control1.en_1);
+}
+
 
 //display line 1 & line 2 msg from array
 void Window(unsigned char num)
