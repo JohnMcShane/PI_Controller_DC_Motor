@@ -1,6 +1,6 @@
 /***************************************************
 Name:- Mark Kearney & John McShane
-Date last modified:- Feb 2017
+Date last modified:- March 2018
 Filename:- PI_Controller.c
 Program Description:- Using a PI Controller to control a geared DC Motor
  
@@ -20,29 +20,30 @@ Program Description:- Using a PI Controller to control a geared DC Motor
 #include <plib/timers.h>
 #include <plib/adc.h>
 #define _XTAL_FREQ 8000000
-#define MAX_SPEED 100
 
 /************************************************
 			Global Variables
 *************************************************/
-const unsigned char msg_ary[10][16] = {"Dsired Val>", "Actual Val>", 
+const unsigned char msg_ary[10][16] = {"Dsired Val>", "Actual Val>",    //window msgs
                                         "POT"       ,"Enter to Accept",
                                         "UPDATED!"  ,""};
 bit TICK_E = 0; //flag for TICK event
 
-const unsigned char * problem = "Problem";
-const unsigned char * startup = "Ready to go";
+const unsigned char * problem = "Problem";  //error msg
+const unsigned char * startup = "Ready to go"; //starup msg
 unsigned int captured = 0; //16 bit value to allow data to be read from the CCPR1H:CCPR1L on interrupt										  
 
 typedef struct{         //structure for controller
-    float Kp,Ki,Kp_Ki;
-    signed char en;
-    signed char en_1;
-    unsigned char un;
-    unsigned char un_1;    
+    float Kp; //proportional gain
+    float Ki; //integral gain
+    float Kp_Ki; //Kp + Ki
+    signed char en; //error
+    signed char en_1; //previous error
+    unsigned char un; //output
+    unsigned char un_1; //previous output
 }Controller;
-Controller control1;
- struct{                        //structure for motor
+Controller control1; //create instance of controller
+ struct{           //structure for motor
         unsigned char Desired;
         unsigned char Actual;
     } motor;
@@ -70,35 +71,35 @@ void __interrupt myIsr(void)
     if(INTCONbits.TMR0IE && INTCONbits.TMR0IF) {
         
         Find_Button_Press();       //check the buttons every 10mS
-        WriteTimer0(40960); 
+        WriteTimer0(40960); //preload
         INTCONbits.TMR0IF = 0;  // clear this interrupt condition
         
         //TICK_E
         count_sample++;
-        if(count_sample == 10){ //If overflow 10 times (10*10ms=100ms, TICK event)
+        if(count_sample == 10){ //If overflow 10 times (10*10ms=100ms, TICK event every 100ms)
             TICK_E = 1;
             count_sample=0;
+            
+            controller_func();  //call control function
+            CCPR2L = control1.un; //update PWM duty cycle 
         }
         
         //Heartbeat signal
         count_test++;
         if(count_test == 100){
             PORTAbits.RA4 = ~PORTAbits.RA4;   //check the timer overflow rate
-            count_test = 0;                   //Toggle every 1 second (heartbeat))
+            count_test = 0;                   //Toggle every 1 second (heartbeat))       
         }
-        
-        controller_func();
-        CCPR2L = control1.un;
-        
+             
     }
     
      if(PIR1bits.CCP1IF & PIE1bits.CCP1IE) //capture interrupt
     {
-        PIR1bits.CCP1IF = 0;
+        PIR1bits.CCP1IF = 0; //reset flag
         TMR1H  = 0x00;  //reset timer
         TMR1L  = 0x00;
         
-        captured = CCPR1L + CCPR1H*256;           
+        captured = CCPR1L + CCPR1H*256;  //read captured value     
     }   
     
 }
@@ -125,21 +126,21 @@ void main ( void )
     
    
     
-    motor.Desired = 50;
-    motor.Actual = 25;
+    motor.Desired = 40; //default value
+    motor.Actual = 0;
     
     typedef  enum {RUN = 0,UPDATE_DESIRED} state_t; //two states
     state_t  state = RUN;
     
     Initial();
     lcd_start ();
-    lcd_cursor ( 0, 0 ) ;
-    lcd_print ( startup ) ;
+    lcd_cursor ( 0, 0 ) ; 
+    lcd_print ( startup ) ; //startup msg
     setup_capture();
     setup_PWM();
+    delay_s(2);
     
-    
-    
+    //initial values for controller
     control1.Kp = 0.4;
     control1.Ki = 0.3;
     control1.Kp_Ki = control1.Kp +control1. Ki;
@@ -148,9 +149,7 @@ void main ( void )
     control1.un = 50;
     control1.un_1 = 50;
     CCPR2L = control1.un;
-    
-    
-    delay_s(2);
+
     
     //Initial LCD Display
     Window(0);
@@ -169,7 +168,7 @@ void main ( void )
 		{
 			case RUN: 
 				if (MENU_E){
-                    state = UPDATE_DESIRED; //state transition
+                    state = UPDATE_DESIRED; //state transition to update state
                     Window(1);             //OnEntry action
                     ADCON0bits.ADON = 1; //turn on adc
                 }
@@ -177,14 +176,14 @@ void main ( void )
 				break;
 			case UPDATE_DESIRED: 
 				if (MENU_E){
-                    state = RUN;  //state transition
+                    state = RUN;  //state transition to RUN state
                     Window(0);              //OnEntry action
                     ADCON0bits.ADON = 0; //turn off adc
                 }
 				break;
 			default: 
 				if (MENU_E){
-                    state = RUN;
+                    state = RUN; //default state
                     Window(0);
                 }
 				break;
@@ -196,20 +195,24 @@ void main ( void )
 			case RUN: 
                 captured == 0 ? rev_s = 0 : rev_s = tclk/captured; //calc speed
                 captured = 0; //reset captured value
-                motor.Actual = rev_s;
+                motor.Actual = rev_s; //update actual value
                 
 				lcd_cursor ( 12, 0 ) ;    
                 lcd_display_value(motor.Desired);
+                
+                
                 lcd_cursor ( 12, 1 ) ;
                 lcd_display_value(motor.Actual);
-				
+                 
+                 
+                 
 				break;
 			case UPDATE_DESIRED: 
                 POT_Val = ADRESH >> 2;// read 6 MSb of adc value
-                if(POT_Val > 55)
-                    POT_Val = 55;
+                if(POT_Val > 50)
+                    POT_Val = 50; //cap speed at 50
                 if (ENTER_E){          
-                    motor.Desired = POT_Val;
+                    motor.Desired = POT_Val; //update desired value
                     Window(2);
                     lcd_cursor ( 0, 1 ) ;
                      lcd_display_value(motor.Desired);
@@ -223,7 +226,7 @@ void main ( void )
 			default: 
 				lcd_cursor ( 0, 0 ) ;
                 lcd_clear();
-				lcd_print ( problem );
+				lcd_print ( problem ); //error msg
 				break;
 		}
 		
@@ -248,10 +251,6 @@ void Initial(void){
     OSCCONbits.IRCF1 = 1;
     OSCCONbits.IRCF0 = 1;
     
-	//LATC = 0xff;
-	//delay_s(1);
-	//LATC = 0x00;
-    
     //0n, 16bit, internal clock(Fosc/4)
     OpenTimer0( TIMER_INT_ON & T0_16BIT & T0_SOURCE_INT & T0_PS_1_1);
     WriteTimer0(45536);  //65,536 - 24,576  //overflows every 10mS
@@ -261,17 +260,19 @@ void Initial(void){
     OpenADC(ADC_FOSC_RC & ADC_LEFT_JUST & ADC_4_TAD,
             ADC_CH0 & ADC_INT_OFF & ADC_REF_VDD_VSS,
             ADC_1ANA);
-    TRISAbits.RA4 = 0;
+    TRISAbits.RA4 = 0; //heartbeat led is output
 }
 
 // controller function 
 void controller_func(void)
 {
-    control1.en_1 = control1.en;
+    control1.en_1 = control1.en; //save previous error
     control1.en = motor.Desired - motor.Actual;   //calc new error
-    control1.un = control1.un_1 ;   //save previous output
+    control1.un_1 = control1.un ;   //save previous output
     
-    control1.un = (control1.un_1) + (control1.Kp_Ki * control1.en) - (control1.Kp * control1.en_1);
+    control1.un = (control1.un_1) + (control1.Kp_Ki * control1.en) - (control1.Kp * control1.en_1); //calc new output value
+    if(control1.un > 100)  
+        control1.un = 100; //cap at 100% duty cycle
 }
 
 
@@ -299,7 +300,6 @@ void delay_s(unsigned char secs)
 
 void setup_PWM(void)
 {
-    CCPR2L = 50;
     CCP2CON = 0b00001100; //pwm mode
     PR2 = 100;  // frequency will be 20kHz
     T2CON = 0b00000100;  //tmr2 is turned on but not prescaled
