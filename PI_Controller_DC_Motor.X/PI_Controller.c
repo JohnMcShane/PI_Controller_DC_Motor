@@ -1,6 +1,6 @@
 /***************************************************
 Name:- Mark Kearney & John McShane
-Date last modified:- March 2018
+Date last modified:- 22 March 2018
 Filename:- PI_Controller.c
 Program Description:- Using a PI Controller to control a geared DC Motor
  
@@ -8,6 +8,7 @@ Program Description:- Using a PI Controller to control a geared DC Motor
  * PORTB: Buttons
  * PORTC: LEDs, Capture, PWM
  * PORTD: LCD
+ * This program will control a DC Motors speed.
  
  
 *****************************************************************************************************/
